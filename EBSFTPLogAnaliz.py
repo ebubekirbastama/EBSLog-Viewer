@@ -1,17 +1,16 @@
 import gzip
 import re
-import glob
 import os
 import sys
 import csv
-
+import requests  # IP bilgisi almak için
+from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QTableView, QVBoxLayout, QWidget,
-    QLineEdit, QHBoxLayout, QPushButton, QFormLayout, QFileDialog
+    QLineEdit, QHBoxLayout, QPushButton, QFormLayout, QFileDialog, QMessageBox
 )
 from PyQt6.QtCore import Qt, QSortFilterProxyModel
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QColor
-
 
 class LogViewer(QMainWindow):
     def __init__(self):
@@ -28,18 +27,21 @@ class LogViewer(QMainWindow):
         self.top_layout = QHBoxLayout()
         self.search_layout = QFormLayout()
 
-        # Buttons
-        self.parse_single_button = QPushButton("Tek Dosyayı Pars Et")
-        self.parse_single_button.setStyleSheet("background-color: #4CAF50; color: white; font-size: 14px; padding: 10px;")
+        # Buttons with emojis
+        self.parse_single_button = QPushButton("📄 Tek Dosyayı Pars Et")
+        self.parse_single_button.setStyleSheet("background-color: #4CAF50; color: black; font-size: 14px; padding: 10px;")
         self.parse_single_button.clicked.connect(self.parse_single_file)
+        self.parse_single_button.setToolTip("Tek bir log dosyasını seçip verileri işle")
 
-        self.parse_all_button = QPushButton("Tüm Kolonları Yeniden İşle")
-        self.parse_all_button.setStyleSheet("background-color: #2196F3; color: white; font-size: 14px; padding: 10px;")
+        self.parse_all_button = QPushButton("🔄 Tüm Verileri Yenile")
+        self.parse_all_button.setStyleSheet("background-color: #2196F3; color: black; font-size: 14px; padding: 10px;")
         self.parse_all_button.clicked.connect(self.reset_table)
+        self.parse_all_button.setToolTip("Birden fazla log dosyasını seçip tüm verileri yeniden yükle")
 
-        self.save_filtered_button = QPushButton("Filtrelenmiş Verileri Kaydet")
-        self.save_filtered_button.setStyleSheet("background-color: #FF5722; color: white; font-size: 14px; padding: 10px;")
+        self.save_filtered_button = QPushButton("💾 Filtrelenmiş Verileri Kaydet")
+        self.save_filtered_button.setStyleSheet("background-color: #FF5722; color: black; font-size: 14px; padding: 10px;")
         self.save_filtered_button.clicked.connect(self.save_filtered_data)
+        self.save_filtered_button.setToolTip("Filtrelenmiş verileri CSV formatında kaydet")
 
         # Add buttons to the top layout
         self.top_layout.addWidget(self.parse_single_button)
@@ -62,6 +64,7 @@ class LogViewer(QMainWindow):
         # Table View
         self.table_view = QTableView()
         self.table_view.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
+        self.table_view.clicked.connect(self.on_table_click)
 
         # Add layouts to the main layout
         self.layout.addLayout(self.top_layout)
@@ -116,30 +119,33 @@ class LogViewer(QMainWindow):
             self.table_view.setRowHidden(row, not match)
 
     def parse_single_file(self):
-        # Tek dosya için parse işlemi
-        log_files = glob.glob(f"C:\\Users\\{os.getlogin()}\\Desktop\\*.gz")
-        if log_files:
-            log_file_path = log_files[0]
+        # Dosya seçme iletişim kutusu
+        log_file_path, _ = QFileDialog.getOpenFileName(
+            self, "Log Dosyasını Seç", str(Path.cwd()), "Log Files (*.gz)"
+        )
+        if log_file_path:
             parsed_logs = parse_logs(log_file_path)
             self.load_data(parsed_logs)
         else:
-            print("Hiçbir .gz dosyası bulunamadı.")
+            print("Hiçbir dosya seçilmedi.")
 
     def reset_table(self):
-        # Tüm kolonları yeniden işlemek için sıfırdan parse işlemi
-        log_files = glob.glob(f"C:\\Users\\{os.getlogin()}\\Desktop\\*.gz")
+        # Birden fazla dosya seçme iletişim kutusu
+        log_files, _ = QFileDialog.getOpenFileNames(
+            self, "Birden Fazla Log Dosyası Seç", str(Path.cwd()), "Log Files (*.gz)"
+        )
         if log_files:
             all_parsed_logs = []
             for file_path in log_files:
                 all_parsed_logs.extend(parse_logs(file_path))
             self.load_data(all_parsed_logs)
         else:
-            print("Hiçbir .gz dosyası bulunamadı.")
+            print("Hiçbir dosya seçilmedi.")
 
     def save_filtered_data(self):
         # Dosya kaydetme iletişim kutusu
         save_path, _ = QFileDialog.getSaveFileName(
-            self, "Filtrelenmiş Verileri Kaydet", "", "CSV Files (*.csv)"
+            self, "Filtrelenmiş Verileri Kaydet", str(Path.cwd()), "CSV Files (*.csv)"
         )
         if not save_path:
             return  # Kullanıcı dosya seçmediyse işlemi sonlandır
@@ -161,7 +167,31 @@ class LogViewer(QMainWindow):
 
         print(f"Filtrelenmiş veriler başarıyla kaydedildi: {save_path}")
 
+    def on_table_click(self, index):
+        # IP adresi kolonuna tıklanıp tıklanmadığını kontrol et
+        if index.column() == 0:  # 0. kolonda IP adresi var
+            ip_address = index.data()
+            self.show_ip_info(ip_address)
 
+    def show_ip_info(self, ip_address):
+        # IP adresine ait bilgileri almak için bir API kullanıyoruz
+        try:
+            response = requests.get(f"https://ipinfo.io/{ip_address}/json")
+            data = response.json()
+
+            # IP bilgilerini bir mesaj kutusunda göster
+            details = f"IP Adresi: {data.get('ip', 'Bilgi Yok')}\n"
+            details += f"Ülke: {data.get('country', 'Bilgi Yok')}\n"
+            details += f"Şehir: {data.get('city', 'Bilgi Yok')}\n"
+            details += f"Konum: {data.get('loc', 'Bilgi Yok')}\n"
+            details += f"ISP: {data.get('org', 'Bilgi Yok')}\n"
+
+            QMessageBox.information(self, "IP Bilgisi", details)
+
+        except requests.RequestException as e:
+            QMessageBox.warning(self, "Hata", f"IP bilgisi alınamadı: {e}")
+
+# Verileri işlemek için fonksiyon (özel log formatına göre)
 def parse_logs(file_path):
     with gzip.open(file_path, "rt", encoding="utf-8") as file:
         logs = file.readlines()
@@ -178,9 +208,8 @@ def parse_logs(file_path):
 
     return log_entries
 
-
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    viewer = LogViewer()
-    viewer.show()
+    window = LogViewer()
+    window.show()
     sys.exit(app.exec())
