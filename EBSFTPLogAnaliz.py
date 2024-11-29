@@ -213,3 +213,4 @@ if __name__ == "__main__":
     window = LogViewer()
     window.show()
     sys.exit(app.exec())
+s
