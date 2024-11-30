@@ -94,10 +94,10 @@ class LogViewer(QMainWindow):
     def load_data(self, data):
         self.model.clear()
         self.model.setHorizontalHeaderLabels(self.column_names)
-
-        # Store logs for statistics
+    
+        # İstatistikler için logları saklama
         self.logs_data = data
-
+    
         for entry in data:
             row = [
                 QStandardItem(entry["ip"]),
@@ -109,12 +109,52 @@ class LogViewer(QMainWindow):
                 QStandardItem(entry.get("referer", "-")),
                 QStandardItem(entry.get("s_port", "-")),
             ]
+    
+            # HTTP yanıt kodlarına göre arka plan rengi ve tooltip ekleme
+            yanit_turu = entry["istek_yanit_turu"]
+            if yanit_turu == "200":
+                color = QColor(144, 238, 144)  # Açık yeşil
+                tooltip = "200: OK - İstek başarıyla tamamlandı."
+            elif yanit_turu == "404":
+                color = QColor(255, 99, 71)  # Domates kırmızısı
+                tooltip = "404: Bulunamadı - Sunucu, istenen kaynağı bulamadı."
+            elif yanit_turu == "500":
+                color = QColor(255, 69, 0)  # Turuncu kırmızı
+                tooltip = "500: İç Sunucu Hatası - Sunucu, dahili bir hata ile karşılaştı."
+            elif yanit_turu == "403":
+                color = QColor(255, 165, 0)  # Turuncu
+                tooltip = "403: Yasak - Sunucu, isteği anladı ancak yetkilendirme reddedildi."
+            elif yanit_turu == "104":
+                color = QColor(255, 223, 186)  # Açık şeftali
+                tooltip = "104: Bağlantı Sıfırlama - Bağlantı, sunucu tarafından beklenmedik bir şekilde kapatıldı."
+            elif yanit_turu == "401":
+                color = QColor(178, 34, 34)  # Koyu kırmızı
+                tooltip = "401: Yetkisiz - İstek, kullanıcı kimlik doğrulaması gerektiriyor."
+            elif yanit_turu == "304":
+                color = QColor(255, 215, 0)  # Altın sarısı
+                tooltip = "304: Değişmemiş - Kaynak, istemci tarafından önceden alınmış ve değiştirilmemiş."
+            elif yanit_turu == "302":
+                color = QColor(0, 255, 0)  # Yeşil (Green)
+                tooltip = "302: Bulundu - Kaynak, geçici olarak başka bir yerde bulunmaktadır."
+            elif yanit_turu == "301":
+                color = QColor(70, 130, 180)  # Çelik mavisi
+                tooltip = "301: Kalıcı Olarak Taşındı - Kaynak kalıcı olarak yeni bir URI'ye taşındı."
+                
+            else:
+                color = QColor(240, 248, 255)  # Açık mavi
+                tooltip = "Bilinmeyen durum kodu"
+    
+            # Renk ve tooltip uygulama
             for item in row:
-                item.setBackground(QColor(240, 248, 255))  # Açık mavi
+                item.setBackground(color)
+                item.setToolTip(tooltip)
+    
             self.model.appendRow(row)
-
+    
         self.table_view.resizeColumnsToContents()
         self.update_statistics()
+
+
 
     def filter_logs(self):
         # Check the filters for each column and apply them
@@ -134,26 +174,33 @@ class LogViewer(QMainWindow):
         url_count = {}
         user_agent_count = {}
         date_count = {}
-
+        ip_frequency = {}
+    
         for entry in self.logs_data:
+            # URL, User-Agent, ve tarih sayımlarını güncelle
             url_count[entry["istek_url"]] = url_count.get(entry["istek_url"], 0) + 1
             user_agent_count[entry["user_agent"]] = user_agent_count.get(entry["user_agent"], 0) + 1
             date_count[entry["tarih"]] = date_count.get(entry["tarih"], 0) + 1
-
-        # En sık erişilen URL, User-Agent, ve en yaygın tarihleri bul
+            # IP sıklığını say
+            ip_frequency[entry["ip"]] = ip_frequency.get(entry["ip"], 0) + 1
+    
+        # En sık erişilen URL, User-Agent, en yaygın tarih ve IP'yi bul
         most_frequent_url = max(url_count, key=url_count.get, default="Veri Yok")
         most_frequent_user_agent = max(user_agent_count, key=user_agent_count.get, default="Veri Yok")
         most_frequent_date = max(date_count, key=date_count.get, default="Veri Yok")
-
+        most_frequent_ip = max(ip_frequency, key=ip_frequency.get, default="Veri Yok")
+    
         # İstatistikleri güncelle
         stats_text = (
             f"Toplam IP sayısı: {ip_count}\n"
             f"En sık erişilen URL: {most_frequent_url}\n"
             f"En sık kullanılan User-Agent: {most_frequent_user_agent}\n"
             f"En yaygın tarihler: {most_frequent_date}\n"
+            f"En sık erişilen IP: {most_frequent_ip}\n"  # En sık erişilen IP'yi ekledim
         )
-
+    
         self.stats_label.setText(stats_text)
+
 
     def parse_single_file(self):
         # Dosya seçme iletişim kutusu
