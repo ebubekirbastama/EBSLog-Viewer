@@ -7,7 +7,7 @@ import requests  # IP bilgisi almak için
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QTableView, QVBoxLayout, QWidget,
-    QLineEdit, QHBoxLayout, QPushButton, QFormLayout, QFileDialog, QMessageBox
+    QLineEdit, QHBoxLayout, QPushButton, QFormLayout, QFileDialog, QMessageBox, QLabel
 )
 from PyQt6.QtCore import Qt, QSortFilterProxyModel
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QColor
@@ -66,6 +66,10 @@ class LogViewer(QMainWindow):
         self.table_view.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
         self.table_view.clicked.connect(self.on_table_click)
 
+        # Statistics Label
+        self.stats_label = QLabel("İstatistikler burada görüntülenecek.")
+        self.layout.addWidget(self.stats_label)
+
         # Add layouts to the main layout
         self.layout.addLayout(self.top_layout)
         self.layout.addLayout(self.search_layout)
@@ -85,9 +89,14 @@ class LogViewer(QMainWindow):
         for filter_input in self.column_filters.values():
             filter_input.textChanged.connect(self.filter_logs)
 
+        self.logs_data = []
+
     def load_data(self, data):
         self.model.clear()
         self.model.setHorizontalHeaderLabels(self.column_names)
+
+        # Store logs for statistics
+        self.logs_data = data
 
         for entry in data:
             row = [
@@ -105,6 +114,7 @@ class LogViewer(QMainWindow):
             self.model.appendRow(row)
 
         self.table_view.resizeColumnsToContents()
+        self.update_statistics()
 
     def filter_logs(self):
         # Check the filters for each column and apply them
@@ -117,6 +127,33 @@ class LogViewer(QMainWindow):
                     match = False
                     break
             self.table_view.setRowHidden(row, not match)
+
+    def update_statistics(self):
+        # İstatistikleri hesapla
+        ip_count = len(set(entry["ip"] for entry in self.logs_data))
+        url_count = {}
+        user_agent_count = {}
+        date_count = {}
+
+        for entry in self.logs_data:
+            url_count[entry["istek_url"]] = url_count.get(entry["istek_url"], 0) + 1
+            user_agent_count[entry["user_agent"]] = user_agent_count.get(entry["user_agent"], 0) + 1
+            date_count[entry["tarih"]] = date_count.get(entry["tarih"], 0) + 1
+
+        # En sık erişilen URL, User-Agent, ve en yaygın tarihleri bul
+        most_frequent_url = max(url_count, key=url_count.get, default="Veri Yok")
+        most_frequent_user_agent = max(user_agent_count, key=user_agent_count.get, default="Veri Yok")
+        most_frequent_date = max(date_count, key=date_count.get, default="Veri Yok")
+
+        # İstatistikleri güncelle
+        stats_text = (
+            f"Toplam IP sayısı: {ip_count}\n"
+            f"En sık erişilen URL: {most_frequent_url}\n"
+            f"En sık kullanılan User-Agent: {most_frequent_user_agent}\n"
+            f"En yaygın tarihler: {most_frequent_date}\n"
+        )
+
+        self.stats_label.setText(stats_text)
 
     def parse_single_file(self):
         # Dosya seçme iletişim kutusu
@@ -174,43 +211,47 @@ class LogViewer(QMainWindow):
             self.show_ip_info(ip_address)
 
     def show_ip_info(self, ip_address):
-        # IP adresine ait bilgileri almak için bir API kullanıyoruz
         try:
             response = requests.get(f"https://ipinfo.io/{ip_address}/json")
             data = response.json()
+            location = data.get("loc", "Bilinmiyor")
+            org = data.get("org", "Bilinmiyor")
+            country = data.get("country", "Bilinmiyor")
+            info_text = (
+                f"IP: {ip_address}\n"
+                f"Lokasyon: {location}\n"
+                f"Organizasyon: {org}\n"
+                f"Ülke: {country}"
+            )
+            QMessageBox.information(self, "IP Bilgisi", info_text)
+        except requests.RequestException:
+            QMessageBox.warning(self, "Hata", "IP bilgisi alınamadı.")
 
-            # IP bilgilerini bir mesaj kutusunda göster
-            details = f"IP Adresi: {data.get('ip', 'Bilgi Yok')}\n"
-            details += f"Ülke: {data.get('country', 'Bilgi Yok')}\n"
-            details += f"Şehir: {data.get('city', 'Bilgi Yok')}\n"
-            details += f"Konum: {data.get('loc', 'Bilgi Yok')}\n"
-            details += f"ISP: {data.get('org', 'Bilgi Yok')}\n"
-
-            QMessageBox.information(self, "IP Bilgisi", details)
-
-        except requests.RequestException as e:
-            QMessageBox.warning(self, "Hata", f"IP bilgisi alınamadı: {e}")
-
-# Verileri işlemek için fonksiyon (özel log formatına göre)
 def parse_logs(file_path):
-    with gzip.open(file_path, "rt", encoding="utf-8") as file:
-        logs = file.readlines()
-
-    log_entries = []
-    log_pattern = re.compile(
-        r'(?P<ip>\S+) - - \[(?P<tarih>[^\]]+)\] "(?P<istek_turu>\S+) (?P<istek_url>\S+) \S+" (?P<istek_yanit_turu>\d+) \S+ "(?P<referer>.*?)" "(?P<user_agent>.*?)" "S-port: (?P<s_port>\d+)"'
-    )
-
-    for log in logs:
-        match = log_pattern.search(log)
-        if match:
-            log_entries.append(match.groupdict())
-
-    return log_entries
+    logs = []
+    try:
+        with gzip.open(file_path, 'rt', encoding='utf-8') as f:
+            for line in f:
+                match = re.match(r'(\d+\.\d+\.\d+\.\d+) - - \[(.*?)\] "(.*?)" (\d+) \d+ "(.*?)" "(.*?)"', line)
+                if match:
+                    ip, tarih, istek, yanit_turu, referer, user_agent = match.groups()
+                    istek_turu, istek_url = istek.split(" ", 1)
+                    logs.append({
+                        "ip": ip,
+                        "tarih": tarih,
+                        "istek_turu": istek_turu,
+                        "user_agent": user_agent,
+                        "istek_yanit_turu": yanit_turu,
+                        "istek_url": istek_url,
+                        "referer": referer,
+                        "s_port": "80",  # Port numarasını burada varsayılan olarak 80 kabul ediyoruz
+                    })
+    except Exception as e:
+        print(f"Hata: {e}")
+    return logs
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = LogViewer()
-    window.show()
+    viewer = LogViewer()
+    viewer.show()
     sys.exit(app.exec())
-s
