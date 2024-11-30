@@ -41,7 +41,7 @@ EBSLog Viewer is a Python application that provides a graphical interface for re
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache-2.0 license 
 
 ## Acknowledgements
 
