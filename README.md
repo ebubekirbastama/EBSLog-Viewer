@@ -26,7 +26,7 @@ EBSLog Viewer is a Python application that provides a graphical interface for re
     ```
 2. Install the required dependencies:
     ```bash
-    pip install -r requirements.txt
+    pip install PyQt6 requests
     ```
 
 ### Usage
